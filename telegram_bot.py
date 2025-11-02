@@ -3,19 +3,17 @@ from flask import Flask, request
 import telebot
 import yt_dlp
 import tempfile
+import threading
 
-# 🔑 Telegram token
+# 🔑 Token
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
-    raise RuntimeError("❌ TELEGRAM_TOKEN aniqlanmadi! Render environment variable orqali qo‘shing.")
+    raise RuntimeError("❌ TELEGRAM_TOKEN topilmadi!")
 
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
+bot = telebot.TeleBot(TELEGRAM_TOKEN, threaded=True)
 app = Flask(__name__)
 
-# 📢 Kanal username
 CHANNEL_USERNAME = "@Asqarov_2007"
-
-# 🍪 Cookie fayl (Instagram uchun)
 COOKIE_FILE = "cookies.txt"
 
 
@@ -28,8 +26,8 @@ def is_subscribed(user_id):
         return False
 
 
-# 🚀 Start komandasi
-@bot.message_handler(commands=['start', 'help'])
+# 🚀 Start
+@bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(
         message.chat.id,
@@ -39,41 +37,19 @@ def start(message):
     )
 
 
-# 🎥 Video yuklab berish
-@bot.message_handler(func=lambda message: message.text.startswith("http"))
-def download_video(message):
-    user_id = message.chat.id
-    url = message.text.strip()
-
-    # 🔒 Avval obuna tekshiramiz
-    if not is_subscribed(user_id):
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(
-            telebot.types.InlineKeyboardButton("📢 Kanalga obuna bo‘lish", url=f"https://t.me/{CHANNEL_USERNAME[1:]}"),
-            telebot.types.InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")
-        )
-        bot.send_message(
-            user_id,
-            f"🚫 Avvalo kanalga obuna bo‘ling:\n{CHANNEL_USERNAME}\n\nShundan so‘ng video yuboring 👇",
-            reply_markup=markup
-        )
-        return
-
-    # 🎬 Yuklab olish jarayoni
-    bot.reply_to(message, "⏳ Video yuklab olinmoqda...")
-
+# 🎞 Asosiy yuklash funksiyasi (fon jarayoni)
+def process_video(message, url):
     try:
-        if not any(d in url for d in ["tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com", "fb.watch"]):
-            bot.reply_to(message, "⚠️ Faqat TikTok, Instagram, Facebook yoki Twitter havolasi yuboring.")
-            return
-
         with tempfile.TemporaryDirectory() as tmpdir:
             ydl_opts = {
                 'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                 'cookiefile': COOKIE_FILE if os.path.exists(COOKIE_FILE) else None,
                 'format': 'mp4',
-                'quiet': True
+                'quiet': True,
+                'retries': 2,  # qayta urinadi
+                'noplaylist': True
             }
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 video_path = ydl.prepare_filename(info)
@@ -83,10 +59,37 @@ def download_video(message):
                 bot.send_video(message.chat.id, v, caption=caption)
 
     except Exception as e:
-        bot.reply_to(message, f"❌ Xatolik: {e}")
+        bot.send_message(message.chat.id, f"❌ Xatolik: {e}")
 
 
-# 🔁 Obuna qayta tekshirish tugmasi
+# 🎥 Havola kelganda
+@bot.message_handler(func=lambda msg: msg.text.startswith("http"))
+def handle_link(message):
+    url = message.text.strip()
+
+    # 🔒 Avval obuna tekshirish
+    if not is_subscribed(message.chat.id):
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(
+            telebot.types.InlineKeyboardButton("📢 Kanalga obuna bo‘lish", url=f"https://t.me/{CHANNEL_USERNAME[1:]}"),
+            telebot.types.InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")
+        )
+        bot.send_message(
+            message.chat.id,
+            f"🚫 Avvalo kanalga obuna bo‘ling:\n{CHANNEL_USERNAME}\n\nSo‘ngra havolani yuboring 👇",
+            reply_markup=markup
+        )
+        return
+
+    # 🎬 Tezkor javob
+    bot.reply_to(message, "⚡️ Yuklab olinmoqda... Iltimos kuting!")
+
+    # ⏩ Yangi oqimda yuklash
+    thread = threading.Thread(target=process_video, args=(message, url))
+    thread.start()
+
+
+# 🔁 Obuna qayta tekshirish
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
 def check_subscription(call):
     user_id = call.message.chat.id
@@ -96,17 +99,17 @@ def check_subscription(call):
         bot.answer_callback_query(call.id, "🚫 Hali obuna bo‘lmagansiz!")
 
 
-# 🌍 Flask webhook
+# 🌐 Flask webhook
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
-    update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
+    update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
     bot.process_new_updates([update])
     return "OK", 200
 
 
 @app.route("/")
 def home():
-    return "<h2>✅ Video yuklab beruvchi bot ishlayapti!</h2>"
+    return "<h3>✅ Bot ishlayapti — instagram_tiktok_uzbot</h3>"
 
 
 if __name__ == "__main__":
