@@ -41,7 +41,6 @@ def start(message):
 def process_video(message, url):
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            # 🔧 Asosiy sozlamalar
             ydl_opts = {
                 'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                 'cookiefile': COOKIE_FILE if os.path.exists(COOKIE_FILE) else None,
@@ -50,41 +49,37 @@ def process_video(message, url):
                 'noplaylist': True
             }
 
+            # 🔽 Video yuklash
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 file_path = ydl.prepare_filename(info)
 
-            # 🎵 Ma’lumotlar
-            track = info.get("track")
-            artist = info.get("artist")
-            title = info.get("title")
-            duration = info.get("duration")
-
-            # 🎬 Caption
+            # 🎬 Faqat bot nomi bilan caption
             caption = "🎬 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
-            if artist or track:
-                caption += f"\n🎵 {artist or ''} - {track or ''}"
-            elif title:
-                caption += f"\n🎵 {title}"
 
-            # 🎧 Agar audio bo‘lsa
-            if info.get("extractor") in ["youtube", "soundcloud", "spotify"] or info.get("vcodec") == "none":
-                audio_opts = {
-                    'format': 'bestaudio/best',
-                    'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
-                    'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-                    'quiet': True
-                }
-                with yt_dlp.YoutubeDL(audio_opts) as ydl:
-                    info_audio = ydl.extract_info(url, download=True)
-                    audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
+            # 🎥 Video yuborish
+            with open(file_path, 'rb') as v:
+                bot.send_video(message.chat.id, v, caption=caption)
 
-                with open(audio_path, 'rb') as a:
-                    bot.send_audio(message.chat.id, a, caption=caption, performer=artist or "", title=track or title)
-            else:
-                # 🎥 Video yuborish
-                with open(file_path, 'rb') as v:
-                    bot.send_video(message.chat.id, v, caption=caption)
+            # 🎧 Endi audio (qo‘shiq)ni ham alohida yuklab berish
+            audio_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192'
+                }],
+                'quiet': True
+            }
+
+            with yt_dlp.YoutubeDL(audio_opts) as ydl:
+                info_audio = ydl.extract_info(url, download=True)
+                audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
+
+            # 🎵 Audio faylni yuborish
+            with open(audio_path, 'rb') as a:
+                bot.send_audio(message.chat.id, a, caption="🎧 Qo‘shiq")
 
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Xatolik: {e}")
@@ -111,7 +106,7 @@ def handle_link(message):
 
     bot.reply_to(message, "⚡️ Yuklab olinmoqda... Iltimos kuting!")
 
-    # ⏩ Yuklash jarayonini alohida oqimda ishga tushirish
+    # ⏩ Yuklashni alohida oqimda ishlatish
     thread = threading.Thread(target=process_video, args=(message, url))
     thread.start()
 
@@ -121,7 +116,8 @@ def handle_link(message):
 def check_subscription(call):
     user_id = call.message.chat.id
     if is_subscribed(user_id):
-        bot.edit_message_text("✅ Obuna tasdiqlandi! Endi video yoki qo‘shiq yuboring 👇", chat_id=user_id, message_id=call.message.message_id)
+        bot.edit_message_text("✅ Obuna tasdiqlandi! Endi video yoki qo‘shiq yuboring 👇",
+                              chat_id=user_id, message_id=call.message.message_id)
     else:
         bot.answer_callback_query(call.id, "🚫 Hali obuna bo‘lmagansiz!")
 
