@@ -54,35 +54,41 @@ def process_video(message, url):
                 info = ydl.extract_info(url, download=True)
                 file_path = ydl.prepare_filename(info)
 
-            # 🎬 Faqat bot nomi bilan caption
+            # 🎬 Caption
             caption = "🎬 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
 
             # 🎥 Video yuborish
             with open(file_path, 'rb') as v:
                 bot.send_video(message.chat.id, v, caption=caption)
 
-            # 🎧 Endi audio (qo‘shiq)ni ham alohida yuklab berish
-            audio_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192'
-                }],
-                'quiet': True
-            }
+            # 🎧 Audio yuklashga urinish (agar topilmasa xato chiqmasin)
+            try:
+                audio_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192'
+                    }],
+                    'quiet': True
+                }
 
-            with yt_dlp.YoutubeDL(audio_opts) as ydl:
-                info_audio = ydl.extract_info(url, download=True)
-                audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
+                with yt_dlp.YoutubeDL(audio_opts) as ydl:
+                    info_audio = ydl.extract_info(url, download=True)
+                    audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
 
-            # 🎵 Audio faylni yuborish
-            with open(audio_path, 'rb') as a:
-                bot.send_audio(message.chat.id, a, caption="🎧 Qo‘shiq")
+                # 🎵 Audio faylni yuborish
+                with open(audio_path, 'rb') as a:
+                    bot.send_audio(message.chat.id, a, caption="🎧 Qo‘shiq")
+
+            except Exception:
+                # ❌ Audio topilmasa, hech narsa yozmaydi
+                pass
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Xatolik: {e}")
+        # Foydalanuvchiga xato yuborilmaydi, lekin server logida ko‘rinadi
+        print(f"[Xatolik] {e}")
 
 
 # 🎥 Link yuborilganda
