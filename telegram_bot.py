@@ -14,7 +14,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN, threaded=True)
 app = Flask(__name__)
 
 CHANNEL_USERNAME = "@Asqarov_2007"
-COOKIE_FILE = "cookies.txt"
+COOKIE_FILE = "cookies.txt"  # Instagram yoki YouTube uchun cookie fayl
 
 
 # ✅ Obuna tekshirish
@@ -37,40 +37,40 @@ def start(message):
     )
 
 
-# 🎞 Video va audio yuklash
+# 🎞 Video + Audio yuklash funksiyasi
 def process_video(message, url):
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            opts = {
+            base_opts = {
                 'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                 'cookiefile': COOKIE_FILE if os.path.exists(COOKIE_FILE) else None,
                 'quiet': True,
                 'noplaylist': True,
                 'geo_bypass': True,
                 'retries': 3,
-                'concurrent_fragment_downloads': 5  # ⏩ Tezroq yuklaydi
+                'concurrent_fragment_downloads': 5  # ⏩ Yuklash tezligini oshiradi
             }
 
+            # 🎥 VIDEO yuklash
             video_path = None
             info = None
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
+                with yt_dlp.YoutubeDL(base_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                     video_path = ydl.prepare_filename(info)
             except Exception as e:
                 print(f"[Video yuklash xatosi] {e}")
 
+            # 🎬 Video topilgan bo‘lsa — yuborish
             if video_path and os.path.exists(video_path):
-                title = info.get("title", "Noma’lum video")
-                artist = info.get("artist") or info.get("uploader", "")
-                caption = f"🎬 <b>{title}</b>\n👤 {artist}\n\n@instagram_tiktok_uzbot"
+                caption = "🎬 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
                 with open(video_path, 'rb') as v:
-                    bot.send_video(message.chat.id, v, caption=caption, parse_mode="HTML")
+                    bot.send_video(message.chat.id, v, caption=caption)
 
-            # 🎧 Audio (MP3)
+            # 🎧 AUDIO yuklash
             try:
                 audio_opts = {
-                    **opts,
+                    **base_opts,
                     'format': 'bestaudio/best',
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
@@ -78,16 +78,15 @@ def process_video(message, url):
                         'preferredquality': '192'
                     }]
                 }
+
                 with yt_dlp.YoutubeDL(audio_opts) as ydl:
                     info_audio = ydl.extract_info(url, download=True)
                     audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
 
                 if os.path.exists(audio_path):
-                    song_title = info_audio.get("title", "Noma’lum qo‘shiq")
-                    artist = info_audio.get("artist") or info_audio.get("uploader", "")
-                    caption = f"🎧 <b>{song_title}</b>\n👤 {artist}\n\n@instagram_tiktok_uzbot"
+                    caption = "🎧 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
                     with open(audio_path, 'rb') as a:
-                        bot.send_audio(message.chat.id, a, caption=caption, parse_mode="HTML")
+                        bot.send_audio(message.chat.id, a, caption=caption)
 
             except Exception as e:
                 print(f"[Audio yuklash xatosi] {e}")
