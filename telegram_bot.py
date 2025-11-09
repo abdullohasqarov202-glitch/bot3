@@ -1,9 +1,9 @@
 import os
+import tempfile
+import threading
 from flask import Flask, request
 import telebot
 import yt_dlp
-import tempfile
-import threading
 
 # 🔑 Token
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -14,7 +14,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN, threaded=True)
 app = Flask(__name__)
 
 CHANNEL_USERNAME = "@Asqarov_2007"
-COOKIE_FILE = "cookies.txt"
+COOKIE_FILE = "cookies.txt"  # instagram + youtube cookies shu faylda
 
 
 # ✅ Obuna tekshirish
@@ -26,73 +26,79 @@ def is_subscribed(user_id):
         return False
 
 
-# 🚀 Start komandasi
+# 🚀 /start komandasi
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(
         message.chat.id,
-        "🎥 Salom! Men sizga TikTok, Instagram, Facebook yoki Twitter videolarini yuklab beraman!\n\n"
+        "🎥 Salom! Men sizga TikTok, Instagram yoki YouTube videolarini yuklab beraman!\n\n"
         "Faqat havolani yuboring 👇",
         parse_mode="HTML"
     )
 
 
-# 🎞 Yuklash funksiyasi (fon jarayoni)
+# 🎞 Yuklash funksiyasi
 def process_video(message, url):
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            ydl_opts = {
+            base_opts = {
                 'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                 'cookiefile': COOKIE_FILE if os.path.exists(COOKIE_FILE) else None,
                 'quiet': True,
-                'retries': 2,
-                'noplaylist': True
+                'noplaylist': True,
+                'geo_bypass': True,
+                'retries': 2
             }
 
-            # 🔽 Video yuklash
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file_path = ydl.prepare_filename(info)
+            # 🎥 Video yuklash
+            video_path = None
+            try:
+                with yt_dlp.YoutubeDL(base_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    video_path = ydl.prepare_filename(info)
+            except Exception as e:
+                print(f"[Video yuklash xatosi] {e}")
 
-            # 🎬 Caption
-            caption = "🎬 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
+            # 🎬 Agar video topilgan bo‘lsa — yuborish
+            if video_path and os.path.exists(video_path):
+                try:
+                    with open(video_path, 'rb') as v:
+                        bot.send_video(
+                            message.chat.id,
+                            v,
+                            caption="🎬 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
+                        )
+                except Exception as e:
+                    print(f"[Video yuborish xatosi] {e}")
 
-            # 🎥 Video yuborish
-            with open(file_path, 'rb') as v:
-                bot.send_video(message.chat.id, v, caption=caption)
-
-            # 🎧 Audio yuklashga urinish (agar topilmasa xato chiqmasin)
+            # 🎧 Audio yuklash
             try:
                 audio_opts = {
+                    **base_opts,
                     'format': 'bestaudio/best',
-                    'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
                         'preferredquality': '192'
-                    }],
-                    'quiet': True
+                    }]
                 }
 
                 with yt_dlp.YoutubeDL(audio_opts) as ydl:
                     info_audio = ydl.extract_info(url, download=True)
                     audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
 
-                # 🎵 Audio faylni yuborish
-                with open(audio_path, 'rb') as a:
-                    bot.send_audio(message.chat.id, a, caption="🎧 Qo‘shiq")
-
-            except Exception:
-                # ❌ Audio topilmasa, hech narsa yozmaydi
-                pass
+                if os.path.exists(audio_path):
+                    with open(audio_path, 'rb') as a:
+                        bot.send_audio(message.chat.id, a, caption="🎧 Qo‘shiq")
+            except Exception as e:
+                print(f"[Audio yuklash xatosi] {e}")
 
     except Exception as e:
-        # Foydalanuvchiga xato yuborilmaydi, lekin server logida ko‘rinadi
-        print(f"[Xatolik] {e}")
+        print(f"[Umumiy xatolik] {e}")
 
 
 # 🎥 Link yuborilganda
-@bot.message_handler(func=lambda msg: msg.text.startswith("http"))
+@bot.message_handler(func=lambda msg: msg.text and msg.text.startswith("http"))
 def handle_link(message):
     url = message.text.strip()
 
@@ -100,8 +106,14 @@ def handle_link(message):
     if not is_subscribed(message.chat.id):
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(
-            telebot.types.InlineKeyboardButton("📢 Kanalga obuna bo‘lish", url=f"https://t.me/{CHANNEL_USERNAME[1:]}"),
-            telebot.types.InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")
+            telebot.types.InlineKeyboardButton(
+                "📢 Kanalga obuna bo‘lish",
+                url=f"https://t.me/{CHANNEL_USERNAME[1:]}"
+            ),
+            telebot.types.InlineKeyboardButton(
+                "✅ Obunani tekshirish",
+                callback_data="check_sub"
+            )
         )
         bot.send_message(
             message.chat.id,
@@ -111,19 +123,18 @@ def handle_link(message):
         return
 
     bot.reply_to(message, "⚡️ Yuklab olinmoqda... Iltimos kuting!")
-
-    # ⏩ Yuklashni alohida oqimda ishlatish
-    thread = threading.Thread(target=process_video, args=(message, url))
-    thread.start()
+    threading.Thread(target=process_video, args=(message, url)).start()
 
 
-# 🔁 Obuna qayta tekshirish
+# 🔁 Obunani qayta tekshirish
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
 def check_subscription(call):
     user_id = call.message.chat.id
     if is_subscribed(user_id):
-        bot.edit_message_text("✅ Obuna tasdiqlandi! Endi video yoki qo‘shiq yuboring 👇",
-                              chat_id=user_id, message_id=call.message.message_id)
+        bot.edit_message_text(
+            "✅ Obuna tasdiqlandi! Endi video yoki qo‘shiq yuboring 👇",
+            chat_id=user_id, message_id=call.message.message_id
+        )
     else:
         bot.answer_callback_query(call.id, "🚫 Hali obuna bo‘lmagansiz!")
 
