@@ -14,7 +14,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN, threaded=True)
 app = Flask(__name__)
 
 CHANNEL_USERNAME = "@Asqarov_2007"
-COOKIE_FILE = "cookies.txt"  # instagram + youtube cookies shu faylda
+COOKIE_FILE = "cookies.txt"
 
 
 # ✅ Obuna tekshirish
@@ -37,44 +37,40 @@ def start(message):
     )
 
 
-# 🎞 Yuklash funksiyasi
+# 🎞 Video va audio yuklash
 def process_video(message, url):
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            base_opts = {
+            opts = {
                 'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                 'cookiefile': COOKIE_FILE if os.path.exists(COOKIE_FILE) else None,
                 'quiet': True,
                 'noplaylist': True,
                 'geo_bypass': True,
-                'retries': 2
+                'retries': 3,
+                'concurrent_fragment_downloads': 5  # ⏩ Tezroq yuklaydi
             }
 
-            # 🎥 Video yuklash
             video_path = None
+            info = None
             try:
-                with yt_dlp.YoutubeDL(base_opts) as ydl:
+                with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                     video_path = ydl.prepare_filename(info)
             except Exception as e:
                 print(f"[Video yuklash xatosi] {e}")
 
-            # 🎬 Agar video topilgan bo‘lsa — yuborish
             if video_path and os.path.exists(video_path):
-                try:
-                    with open(video_path, 'rb') as v:
-                        bot.send_video(
-                            message.chat.id,
-                            v,
-                            caption="🎬 Yuklab beruvchi bot: @instagram_tiktok_uzbot"
-                        )
-                except Exception as e:
-                    print(f"[Video yuborish xatosi] {e}")
+                title = info.get("title", "Noma’lum video")
+                artist = info.get("artist") or info.get("uploader", "")
+                caption = f"🎬 <b>{title}</b>\n👤 {artist}\n\n@instagram_tiktok_uzbot"
+                with open(video_path, 'rb') as v:
+                    bot.send_video(message.chat.id, v, caption=caption, parse_mode="HTML")
 
-            # 🎧 Audio yuklash
+            # 🎧 Audio (MP3)
             try:
                 audio_opts = {
-                    **base_opts,
+                    **opts,
                     'format': 'bestaudio/best',
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
@@ -82,14 +78,17 @@ def process_video(message, url):
                         'preferredquality': '192'
                     }]
                 }
-
                 with yt_dlp.YoutubeDL(audio_opts) as ydl:
                     info_audio = ydl.extract_info(url, download=True)
                     audio_path = ydl.prepare_filename(info_audio).rsplit('.', 1)[0] + ".mp3"
 
                 if os.path.exists(audio_path):
+                    song_title = info_audio.get("title", "Noma’lum qo‘shiq")
+                    artist = info_audio.get("artist") or info_audio.get("uploader", "")
+                    caption = f"🎧 <b>{song_title}</b>\n👤 {artist}\n\n@instagram_tiktok_uzbot"
                     with open(audio_path, 'rb') as a:
-                        bot.send_audio(message.chat.id, a, caption="🎧 Qo‘shiq")
+                        bot.send_audio(message.chat.id, a, caption=caption, parse_mode="HTML")
+
             except Exception as e:
                 print(f"[Audio yuklash xatosi] {e}")
 
@@ -101,19 +100,11 @@ def process_video(message, url):
 @bot.message_handler(func=lambda msg: msg.text and msg.text.startswith("http"))
 def handle_link(message):
     url = message.text.strip()
-
-    # 🔒 Obuna tekshirish
     if not is_subscribed(message.chat.id):
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(
-            telebot.types.InlineKeyboardButton(
-                "📢 Kanalga obuna bo‘lish",
-                url=f"https://t.me/{CHANNEL_USERNAME[1:]}"
-            ),
-            telebot.types.InlineKeyboardButton(
-                "✅ Obunani tekshirish",
-                callback_data="check_sub"
-            )
+            telebot.types.InlineKeyboardButton("📢 Kanalga obuna bo‘lish", url=f"https://t.me/{CHANNEL_USERNAME[1:]}"),
+            telebot.types.InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")
         )
         bot.send_message(
             message.chat.id,
@@ -131,10 +122,8 @@ def handle_link(message):
 def check_subscription(call):
     user_id = call.message.chat.id
     if is_subscribed(user_id):
-        bot.edit_message_text(
-            "✅ Obuna tasdiqlandi! Endi video yoki qo‘shiq yuboring 👇",
-            chat_id=user_id, message_id=call.message.message_id
-        )
+        bot.edit_message_text("✅ Obuna tasdiqlandi! Endi video yoki qo‘shiq yuboring 👇",
+                              chat_id=user_id, message_id=call.message.message_id)
     else:
         bot.answer_callback_query(call.id, "🚫 Hali obuna bo‘lmagansiz!")
 
