@@ -1,4 +1,2 @@
-Flask
-pyTelegramBotAPI
-yt-dlp
+python-telegram-bot==20.7
 
